@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.1.0
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/ardanlabs/darwin/v2 v2.0.0
-	github.com/aws/aws-sdk-go v1.44.114
+	github.com/aws/aws-sdk-go v1.44.185
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/briandowns/spinner v1.19.0
@@ -27,7 +27,7 @@ require (
 	github.com/kabukky/httpscerts v0.0.0-20150320125433-617593d7dcb3
 	github.com/lib/pq v1.10.7
 	github.com/libp2p/go-libp2p v0.23.2
-	github.com/libp2p/go-libp2p-pubsub v0.8.1
+	github.com/libp2p/go-libp2p-pubsub v0.8.3
 	github.com/multiformats/go-multiaddr v0.7.0
 	github.com/multiformats/go-multiaddr-dns v0.3.1
 	github.com/nikkolasg/hexjson v0.1.0
@@ -39,8 +39,8 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	go.uber.org/zap v1.23.0
 	golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2
-	golang.org/x/net v0.0.0-20221004154528-8021a29435af
-	golang.org/x/sys v0.0.0-20221010170243-090e33056c14
+	golang.org/x/net v0.1.0
+	golang.org/x/sys v0.1.0
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 	google.golang.org/grpc v1.50.0
 	google.golang.org/protobuf v1.28.1
@@ -61,6 +61,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
+	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/flynn/noise v1.0.0 // indirect
@@ -153,7 +154,7 @@ require (
 	golang.org/x/exp v0.0.0-20221011201855-a3968a42eed6 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/sync v0.0.0-20220929204114-8fcdb60fdcc0 // indirect
-	golang.org/x/text v0.3.8 // indirect
+	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/genproto v0.0.0-20221010155953-15ba04fc1c0e // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
