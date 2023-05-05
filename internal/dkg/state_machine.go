@@ -237,6 +237,24 @@ func NewFreshState(beaconID string) *DBState {
 	}
 }
 
+func (d *DBState) Apply(me *drand.Participant, packet *drand.GossipPacket) (*DBState, error) {
+	switch p := packet.Packet.(type) {
+	case *drand.GossipPacket_Proposal:
+		return d.Proposed(me, p.Proposal, packet.Metadata)
+	case *drand.GossipPacket_Accept:
+		return d.ReceivedAcceptance(p.Accept.Acceptor, packet.Metadata)
+	case *drand.GossipPacket_Reject:
+		return d.ReceivedRejection(p.Reject.Rejector, packet.Metadata)
+	case *drand.GossipPacket_Execute:
+		return d.Executing(me, packet.Metadata)
+	case *drand.GossipPacket_Abort:
+		return d.Aborted(packet.Metadata)
+	case *drand.GossipPacket_Dkg:
+		return nil, errors.New("gossip packets should be handled above")
+	}
+	return nil, errors.New("invalid DKG gossip packet received")
+}
+
 func (d *DBState) Joined(me *drand.Participant, previousGroup *key.Group) (*DBState, error) {
 	if !isValidStateChange(d.State, Joined) {
 		return nil, InvalidStateChange(d.State, Joined)
@@ -295,12 +313,12 @@ func (d *DBState) Proposing(me *drand.Participant, terms *drand.ProposalTerms) (
 	}, nil
 }
 
-func (d *DBState) Proposed(sender, me *drand.Participant, terms *drand.ProposalTerms) (*DBState, error) {
+func (d *DBState) Proposed(me *drand.Participant, terms *drand.ProposalTerms, metadata *drand.GossipMetadata) (*DBState, error) {
 	if !isValidStateChange(d.State, Proposed) {
 		return nil, InvalidStateChange(d.State, Proposed)
 	}
 
-	if terms.Leader != sender {
+	if terms.Leader.Address != metadata.Address {
 		return nil, ErrCannotProposeAsNonLeader
 	}
 
@@ -340,9 +358,26 @@ func (d *DBState) TimedOut() (*DBState, error) {
 	return d, nil
 }
 
-func (d *DBState) Aborted() (*DBState, error) {
+func (d *DBState) StartAbort(me *drand.Participant) (*DBState, error) {
 	if !isValidStateChange(d.State, Aborted) {
 		return nil, InvalidStateChange(d.State, Aborted)
+	}
+
+	if d.Leader.Address != me.Address {
+		return nil, ErrOnlyLeaderCanAbort
+	}
+
+	d.State = Aborted
+	return d, nil
+}
+
+func (d *DBState) Aborted(metadata *drand.GossipMetadata) (*DBState, error) {
+	if !isValidStateChange(d.State, Aborted) {
+		return nil, InvalidStateChange(d.State, Aborted)
+	}
+
+	if d.Leader.Address != metadata.Address {
+		return nil, ErrOnlyLeaderCanAbort
 	}
 
 	d.State = Aborted
@@ -421,7 +456,28 @@ func (d *DBState) Evicted() (*DBState, error) {
 	return d, nil
 }
 
-func (d *DBState) Executing(me *drand.Participant) (*DBState, error) {
+func (d *DBState) StartExecuting(me *drand.Participant) (*DBState, error) {
+	if hasTimedOut(d) {
+		return nil, ErrTimeoutReached
+	}
+
+	if util.Contains(d.Leaving, me) {
+		return d.Left(me)
+	}
+
+	if !isValidStateChange(d.State, Executing) {
+		return nil, InvalidStateChange(d.State, Executing)
+	}
+
+	if !util.EqualParticipant(d.Leader, me) {
+		return nil, ErrOnlyLeaderCanTriggerExecute
+	}
+
+	d.State = Executing
+	return d, nil
+}
+
+func (d *DBState) Executing(me *drand.Participant, metadata *drand.GossipMetadata) (*DBState, error) {
 	if hasTimedOut(d) {
 		return nil, ErrTimeoutReached
 	}
@@ -436,6 +492,10 @@ func (d *DBState) Executing(me *drand.Participant) (*DBState, error) {
 
 	if !util.Contains(d.Remaining, me) && !util.Contains(d.Joining, me) {
 		return nil, ErrCannotExecuteIfNotJoinerOrRemainer
+	}
+
+	if metadata.Address != d.Leader.Address {
+		return nil, ErrOnlyLeaderCanTriggerExecute
 	}
 
 	d.State = Executing
@@ -465,13 +525,9 @@ func (d *DBState) Complete(finalGroup *key.Group, share *key.Share) (*DBState, e
 	return d, nil
 }
 
-func (d *DBState) ReceivedAcceptance(me, them *drand.Participant) (*DBState, error) {
+func (d *DBState) ReceivedAcceptance(them *drand.Participant, metadata *drand.GossipMetadata) (*DBState, error) {
 	if d.State != Proposing {
 		return nil, InvalidStateChange(d.State, Proposing)
-	}
-
-	if !util.EqualParticipant(d.Leader, me) {
-		return nil, ErrNonLeaderCannotReceiveAcceptance
 	}
 
 	if !util.Contains(d.Remaining, them) {
@@ -482,19 +538,19 @@ func (d *DBState) ReceivedAcceptance(me, them *drand.Participant) (*DBState, err
 		return nil, ErrDuplicateAcceptance
 	}
 
+	if metadata.Address != them.Address {
+		return nil, ErrInvalidAcceptor
+	}
+
 	d.Acceptors = append(d.Acceptors, them)
 	d.Rejectors = util.Without(d.Rejectors, them)
 
 	return d, nil
 }
 
-func (d *DBState) ReceivedRejection(me, them *drand.Participant) (*DBState, error) {
+func (d *DBState) ReceivedRejection(them *drand.Participant, metadata *drand.GossipMetadata) (*DBState, error) {
 	if d.State != Proposing {
 		return nil, InvalidStateChange(d.State, Proposing)
-	}
-
-	if !util.EqualParticipant(d.Leader, me) {
-		return nil, ErrNonLeaderCannotReceiveRejection
 	}
 
 	if !util.Contains(d.Remaining, them) {
@@ -503,6 +559,10 @@ func (d *DBState) ReceivedRejection(me, them *drand.Participant) (*DBState, erro
 
 	if util.Contains(d.Rejectors, them) {
 		return nil, ErrDuplicateRejection
+	}
+
+	if metadata.Address != them.Address {
+		return nil, ErrInvalidRejector
 	}
 
 	d.Acceptors = util.Without(d.Acceptors, them)
@@ -524,7 +584,6 @@ var ErrGenesisSeedCannotChange = errors.New("genesis seed cannot change after th
 var ErrTransitionTimeMustBeGenesisTime = errors.New("transition time must be the same as the genesis time for the first epoch")
 var ErrTransitionTimeMissing = errors.New("transition time must be provided in a proposal")
 var ErrTransitionTimeBeforeGenesis = errors.New("transition time cannot be before the genesis time")
-var ErrTransitionTimeTooSoonAfterGenesis = errors.New("transition time cannot be sooner than one round after genesis")
 var ErrSelfMissingFromProposal = errors.New("you must include yourself in a proposal")
 var ErrCannotJoinIfNotInJoining = errors.New("you cannot join a proposal in which you are not a joiner")
 var ErrJoiningAfterFirstEpochNeedsGroupFile = errors.New("joining after the first epoch requires a previous group file")
@@ -543,9 +602,13 @@ var ErrCannotAcceptProposalWhereJoining = errors.New("you cannot accept a propos
 var ErrCannotRejectProposalWhereLeaving = errors.New("you cannot reject a proposal where your node is leaving")
 var ErrCannotRejectProposalWhereJoining = errors.New("you cannot reject a proposal where your node is joining (just turn your node off)")
 var ErrCannotLeaveIfNotALeaver = errors.New("you cannot execute leave if you were not included as a leaver in the proposal")
+var ErrOnlyLeaderCanTriggerExecute = errors.New("only the leader can trigger the execution")
+var ErrOnlyLeaderCanAbort = errors.New("only the leader can abort the DKG")
 var ErrCannotExecuteIfNotJoinerOrRemainer = errors.New("you cannot start execution if you are not a remainer or joiner to the DKG")
 var ErrUnknownAcceptor = errors.New("somebody unknown tried to accept the proposal")
 var ErrDuplicateAcceptance = errors.New("this participant already accepted the proposal")
+var ErrInvalidAcceptor = errors.New("the node that signed this message is not the one claiming be accepting")
+var ErrInvalidRejector = errors.New("the node that signed this message is not the one claiming be rejecting")
 var ErrUnknownRejector = errors.New("somebody unknown tried to reject the proposal")
 var ErrDuplicateRejection = errors.New("this participant already rejected the proposal")
 var ErrNonLeaderCannotReceiveAcceptance = errors.New("you received an acceptance but are not the leader of this DKG - cannot do anything")
